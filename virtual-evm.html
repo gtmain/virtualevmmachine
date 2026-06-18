@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Virtual EVM — Polling Simulation</title>
+<style>
+  :root{
+    --casing:#ECE7DA;
+    --casing-dark:#D9D2C0;
+    --bezel:#B6AE9C;
+    --ink:#2B2822;
+    --ink-soft:#5C5648;
+    --blue:#14509E;
+    --blue-light:#2E73C8;
+    --led-red:#D43C2E;
+    --led-red-dim:#5e2b27;
+    --led-green:#3F9142;
+    --led-green-dim:#2c3f2c;
+    --amber:#D98B22;
+    --lcd:#1c2b22;
+    --lcd-text:#7CF29A;
+    --backdrop:#3B3F3C;
+    --backdrop-dot:#33362F;
+    --paper:#F4F0E4;
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--backdrop);
+    background-image:radial-gradient(var(--backdrop-dot) 1px, transparent 1px);
+    background-size:18px 18px;
+    color:var(--ink);
+    font-family:"Segoe UI", Helvetica, Arial, sans-serif;
+    min-height:100vh;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    padding:24px 12px 48px;
+  }
+
+  *:focus-visible{
+    outline:3px solid var(--amber);
+    outline-offset:2px;
+  }
+
+  .machine{
+    width:100%;
+    max-width:760px;
+  }
+
+  .plate{
+    background:linear-gradient(180deg,#3a3d39,#23251f);
+    color:#e9e4d4;
+    border-radius:8px 8px 0 0;
+    padding:14px 20px;
+    text-align:center;
+    border:1px solid #15140f;
+  }
+  .plate .title{
+    font-family:"Arial Narrow", Arial, sans-serif;
+    font-weight:800;
+    font-size:26px;
+    letter-spacing:3px;
+    text-transform:uppercase;
+  }
+  .plate .subtitle{
+    font-size:11px;
+    letter-spacing:2px;
+    color:#b9b2a0;
+    margin-top:4px;
+    text-transform:uppercase;
+  }
+
+  .vvpat-box{
+    background:var(--casing-dark);
+    border-left:1px solid var(--bezel);
+    border-right:1px solid var(--bezel);
+    padding:10px 16px 18px;
+    position:relative;
+    overflow:hidden;
+  }
+  .vvpat-label{
+    font-size:10px;
+    letter-spacing:2px;
+    color:var(--ink-soft);
+    text-align:center;
+    margin-bottom:8px;
+  }
+  .vvpat-slot{
+    height:84px;
+    background:#1c1c18;
+    border-radius:4px;
+    position:relative;
+    box-shadow:inset 0 4px 10px rgba(0,0,0,.5);
+    display:flex;
+    justify-content:center;
+    overflow:hidden;
+  }
+  .slip{
+    position:absolute;
+    top:-150%;
+    width:150px;
+    background:var(--paper);
+    border:1px solid #c9c1aa;
+    border-top:none;
+    padding:8px 10px 10px;
+    font-family:"Consolas","Courier New",monospace;
+    font-size:10.5px;
+    line-height:1.4;
+    text-align:center;
+    border-radius:0 0 4px 4px;
+    box-shadow:0 3px 6px rgba(0,0,0,.3);
+    transition:top 0.7s cubic-bezier(.2,.7,.3,1), opacity .6s ease;
+    opacity:0;
+  }
+  .slip.show{ top:0%; opacity:1; }
+  .slip.drop{ top:160%; opacity:0; transition:top 0.6s ease-in, opacity .5s ease .2s; }
+  .slip .sym{ font-size:20px; margin:2px 0; }
+  .slip .name{ font-weight:700; }
+  .slip .serial{ color:#7a6f4d; margin-top:4px; }
+
+  @media (prefers-reduced-motion: reduce){
+    .slip{ transition:opacity .3s ease; top:0%; }
+  }
+
+  .panels{
+    display:flex;
+    gap:2px;
+    background:var(--bezel);
+  }
+  @media (max-width:620px){
+    .panels{ flex-direction:column; }
+  }
+
+  .unit{
+    background:var(--casing);
+    flex:1;
+    padding:14px 16px 18px;
+    min-width:0;
+  }
+  .unit h2{
+    font-size:11px;
+    letter-spacing:2px;
+    text-transform:uppercase;
+    color:var(--ink-soft);
+    margin:0 0 10px;
+    border-bottom:1px solid var(--bezel);
+    padding-bottom:6px;
+  }
+
+  .row{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:7px 4px;
+    border-bottom:1px dashed #cfc8b6;
+  }
+  .row:last-child{ border-bottom:none; }
+
+  .sl{
+    font-family:"Consolas","Courier New",monospace;
+    font-size:11px;
+    color:var(--ink-soft);
+    width:22px;
+    flex-shrink:0;
+  }
+  .symbol{
+    width:28px;
+    height:28px;
+    flex-shrink:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .symbol svg{ width:100%; height:100%; }
+
+  .names{ flex:1; min-width:0; }
+  .party{ font-size:12.5px; font-weight:700; }
+  .candidate{ font-size:11px; color:var(--ink-soft); }
+
+  .led{
+    width:9px;
+    height:9px;
+    border-radius:50%;
+    background:var(--led-red-dim);
+    flex-shrink:0;
+    box-shadow:inset 0 0 2px rgba(0,0,0,.5);
+    transition:background .15s, box-shadow .15s;
+  }
+  .led.on{
+    background:var(--led-red);
+    box-shadow:0 0 8px 2px rgba(212,60,46,.8);
+  }
+
+  .vote-btn{
+    width:30px;
+    height:30px;
+    border-radius:50%;
+    border:3px solid #0d3a78;
+    background:radial-gradient(circle at 35% 30%, var(--blue-light), var(--blue));
+    cursor:pointer;
+    flex-shrink:0;
+    box-shadow:0 2px 3px rgba(0,0,0,.3);
+  }
+  .vote-btn:active{ transform:translateY(1px); }
+  .vote-btn:disabled{
+    background:#9aa3ab;
+    border-color:#7a818a;
+    cursor:not-allowed;
+    box-shadow:none;
+  }
+
+  .display{
+    background:var(--lcd);
+    color:var(--lcd-text);
+    font-family:"Consolas","Courier New",monospace;
+    border-radius:4px;
+    padding:10px 12px;
+    margin-bottom:12px;
+    box-shadow:inset 0 0 6px rgba(0,0,0,.6);
+  }
+  .display .dline{
+    font-size:11px;
+    letter-spacing:1px;
+    display:flex;
+    justify-content:space-between;
+    padding:2px 0;
+  }
+  .display .dline b{ font-size:13px; }
+
+  .ctrl-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:8px;
+  }
+  .ctrl-btn{
+    border:none;
+    border-radius:5px;
+    padding:11px 6px;
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:1px;
+    text-transform:uppercase;
+    cursor:pointer;
+    color:#fff;
+    box-shadow:0 2px 3px rgba(0,0,0,.25);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:4px;
+  }
+  .ctrl-btn:active{ transform:translateY(1px); }
+  .ctrl-btn:disabled{
+    background:#a7a39a !important;
+    cursor:not-allowed;
+    box-shadow:none;
+  }
+  .ctrl-btn .dot{
+    width:7px; height:7px; border-radius:50%;
+    background:rgba(255,255,255,.6);
+  }
+  .btn-power{ background:#444039; }
+  .btn-power.on{ background:var(--led-green); }
+  .btn-ballot{ background:var(--amber); }
+  .btn-close{ background:#7a3030; }
+  .btn-clear{ background:#5b5650; }
+  .btn-result{ background:var(--blue); }
+
+  .statusbar{
+    background:#15140f;
+    color:#dcd5c2;
+    font-family:"Consolas","Courier New",monospace;
+    font-size:12px;
+    padding:10px 16px;
+    border-radius:0 0 8px 8px;
+    min-height:18px;
+    border:1px solid #0c0b08;
+    border-top:none;
+  }
+
+  .results{
+    margin-top:10px;
+    font-size:11.5px;
+  }
+  .results .bar-row{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    margin:5px 0;
+  }
+  .results .bar-track{
+    flex:1;
+    background:#cfc8b6;
+    height:8px;
+    border-radius:4px;
+    overflow:hidden;
+  }
+  .results .bar-fill{
+    height:100%;
+    background:var(--blue);
+  }
+  .results .bar-label{ width:78px; flex-shrink:0; }
+  .results .bar-count{ width:30px; text-align:right; flex-shrink:0; }
+
+  .confirm-overlay{
+    position:fixed; inset:0;
+    background:rgba(0,0,0,.55);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    padding:20px;
+    z-index:10;
+  }
+  .confirm-overlay.show{ display:flex; }
+  .confirm-card{
+    background:var(--paper);
+    border-radius:6px;
+    padding:18px 20px;
+    max-width:320px;
+    text-align:center;
+    box-shadow:0 8px 24px rgba(0,0,0,.4);
+  }
+  .confirm-card p{ font-size:13px; margin:0 0 14px; }
+  .confirm-actions{ display:flex; gap:10px; justify-content:center; }
+  .confirm-actions button{
+    border:none; border-radius:4px; padding:8px 16px;
+    font-weight:700; font-size:12px; cursor:pointer;
+  }
+  .confirm-yes{ background:var(--led-red); color:#fff; }
+  .confirm-no{ background:#ddd6c4; color:var(--ink); }
+
+  footer{
+    max-width:760px;
+    text-align:center;
+    color:#b9b2a0;
+    font-size:10.5px;
+    margin-top:10px;
+    line-height:1.5;
+  }
+</style>
+</head>
+<body>
+
+<div class="machine">
+  <div class="plate">
+    <div class="title">Virtual EVM</div>
+    <div class="subtitle">Electronic Voting Machine — Polling Simulation</div>
+  </div>
+
+  <div class="vvpat-box">
+    <div class="vvpat-label">VVPAT — Voter Verifiable Paper Trail</div>
+    <div class="vvpat-slot">
+      <div class="slip" id="slip">
+        <div class="sym" id="slipSym">★</div>
+        <div class="name" id="slipName">—</div>
+        <div class="serial" id="slipSerial">SLIP NO. 000000</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panels">
+    <div class="unit unit-balloting">
+      <h2>Balloting Unit</h2>
+
+      <div class="row" data-id="1">
+        <span class="sl">1</span>
+        <span class="symbol">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="5" fill="#D98B22"/><g stroke="#D98B22" stroke-width="2"><line x1="12" y1="1" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="23"/><line x1="1" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="23" y2="12"/><line x1="4.2" y1="4.2" x2="6.3" y2="6.3"/><line x1="17.7" y1="17.7" x2="19.8" y2="19.8"/><line x1="4.2" y1="19.8" x2="6.3" y2="17.7"/><line x1="17.7" y1="6.3" x2="19.8" y2="4.2"/></g></svg>
+        </span>
+        <span class="names">
+          <div class="party">Sunrise Party</div>
+          <div class="candidate">A. Sharma</div>
+        </span>
+        <span class="led" id="led-1"></span>
+        <button class="vote-btn" data-vote="1" aria-label="Vote for A. Sharma, Sunrise Party"></button>
+      </div>
+
+      <div class="row" data-id="2">
+        <span class="sl">2</span>
+        <span class="symbol">
+          <svg viewBox="0 0 24 24"><polygon points="12,1 15,9 23,9 16.5,14 19,22 12,17 5,22 7.5,14 1,9 9,9" fill="#14509E"/></svg>
+        </span>
+        <span class="names">
+          <div class="party">Starline Party</div>
+          <div class="candidate">K. Verma</div>
+        </span>
+        <span class="led" id="led-2"></span>
+        <button class="vote-btn" data-vote="2" aria-label="Vote for K. Verma, Starline Party"></button>
+      </div>
+
+      <div class="row" data-id="3">
+        <span class="sl">3</span>
+        <span class="symbol">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="9" r="7" fill="#3F9142"/><rect x="10.5" y="14" width="3" height="9" fill="#6b4a2c"/></svg>
+        </span>
+        <span class="names">
+          <div class="party">Banyan Party</div>
+          <div class="candidate">R. Iyer</div>
+        </span>
+        <span class="led" id="led-3"></span>
+        <button class="vote-btn" data-vote="3" aria-label="Vote for R. Iyer, Banyan Party"></button>
+      </div>
+
+      <div class="row" data-id="4">
+        <span class="sl">4</span>
+        <span class="symbol">
+          <svg viewBox="0 0 24 24"><polygon points="12,1 22,12 12,23 2,12" fill="#9C3FB5"/><line x1="12" y1="1" x2="12" y2="23" stroke="#fff" stroke-width="1"/><line x1="2" y1="12" x2="22" y2="12" stroke="#fff" stroke-width="1"/></svg>
+        </span>
+        <span class="names">
+          <div class="party">Skyline Party</div>
+          <div class="candidate">M. Khan</div>
+        </span>
+        <span class="led" id="led-4"></span>
+        <button class="vote-btn" data-vote="4" aria-label="Vote for M. Khan, Skyline Party"></button>
+      </div>
+
+      <div class="row" data-id="nota">
+        <span class="sl">5</span>
+        <span class="symbol">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="#5C5648" stroke-width="2"/><line x1="5.5" y1="18.5" x2="18.5" y2="5.5" stroke="#5C5648" stroke-width="2"/></svg>
+        </span>
+        <span class="names">
+          <div class="party">None of the Above</div>
+          <div class="candidate">NOTA</div>
+        </span>
+        <span class="led" id="led-nota"></span>
+        <button class="vote-btn" data-vote="nota" aria-label="Vote NOTA, none of the above"></button>
+      </div>
+    </div>
+
+    <div class="unit unit-control">
+      <h2>Control Unit</h2>
+      <div class="display">
+        <div class="dline"><span>STATUS</span><b id="dispStatus">OFF</b></div>
+        <div class="dline"><span>TOTAL VOTES</span><b id="dispTotal">000000</b></div>
+      </div>
+
+      <div class="ctrl-grid">
+        <button class="ctrl-btn btn-power" id="btnPower"><span class="dot"></span>Power</button>
+        <button class="ctrl-btn btn-ballot" id="btnBallot" disabled><span class="dot"></span>Ballot</button>
+        <button class="ctrl-btn btn-close" id="btnClose" disabled><span class="dot"></span>Close Poll</button>
+        <button class="ctrl-btn btn-result" id="btnResult" disabled><span class="dot"></span>Result</button>
+      </div>
+      <button class="ctrl-btn btn-clear" id="btnClear" style="width:100%;margin-top:8px;" disabled><span class="dot"></span>Clear All Votes</button>
+
+      <div class="results" id="results" hidden></div>
+    </div>
+  </div>
+
+  <div class="statusbar" id="statusbar">Machine is OFF. Press POWER to switch on.</div>
+</div>
+
+<footer>Educational simulation only — not affiliated with the Election Commission of India or any official voting authority. All parties and candidates shown are fictional.</footer>
+
+<div class="confirm-overlay" id="confirmOverlay">
+  <div class="confirm-card">
+    <p>Clear all recorded votes? This cannot be undone.</p>
+    <div class="confirm-actions">
+      <button class="confirm-yes" id="confirmYes">Clear votes</button>
+      <button class="confirm-no" id="confirmNo">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const candidates = {
+    "1":   { party:"Sunrise Party",  name:"A. Sharma", sym:"☀" },
+    "2":   { party:"Starline Party", name:"K. Verma",  sym:"★" },
+    "3":   { party:"Banyan Party",   name:"R. Iyer",   sym:"🌳" },
+    "4":   { party:"Skyline Party",  name:"M. Khan",   sym:"◇" },
+    "nota":{ party:"None of the Above", name:"NOTA",   sym:"⊘" }
+  };
+
+  let state = {
+    power:false,
+    ballotOpen:false,
+    closed:false,
+    votes:{ "1":0, "2":0, "3":0, "4":0, "nota":0 },
+    slipCounter:0
+  };
+
+  const el = id => document.getElementById(id);
+  const btnPower = el('btnPower'), btnBallot = el('btnBallot'),
+        btnClose = el('btnClose'), btnResult = el('btnResult'),
+        btnClear = el('btnClear');
+  const dispStatus = el('dispStatus'), dispTotal = el('dispTotal');
+  const statusbar = el('statusbar');
+  const voteButtons = document.querySelectorAll('.vote-btn');
+  const slip = el('slip'), slipSym = el('slipSym'), slipName = el('slipName'), slipSerial = el('slipSerial');
+  const resultsBox = el('results');
+
+  let audioCtx = null;
+  function beep(freq, dur){
+    try{
+      if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'square';
+      osc.frequency.value = freq;
+      gain.gain.value = 0.12;
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.start();
+      setTimeout(()=>{ try{osc.stop();}catch(e){} }, dur);
+    }catch(e){ /* audio unavailable, ignore */ }
+  }
+
+  function setStatus(msg){ statusbar.textContent = msg; }
+
+  function totalVotes(){
+    return Object.values(state.votes).reduce((a,b)=>a+b,0);
+  }
+
+  function refreshDisplay(){
+    dispStatus.textContent = !state.power ? 'OFF' : (state.closed ? 'CLOSED' : (state.ballotOpen ? 'READY' : 'STANDBY'));
+    dispTotal.textContent = String(totalVotes()).padStart(6,'0');
+
+    btnPower.classList.toggle('on', state.power);
+    btnPower.textContent = ''; // rebuilt below
+    btnPower.innerHTML = '<span class="dot"></span>' + (state.power ? 'Power: On' : 'Power: Off');
+
+    btnBallot.disabled = !state.power || state.closed || state.ballotOpen;
+    btnClose.disabled = !state.power || state.closed;
+    btnResult.disabled = !state.closed;
+    btnClear.disabled = !state.power || !state.closed;
+
+    voteButtons.forEach(b=>{
+      b.disabled = !(state.power && state.ballotOpen && !state.closed);
+    });
+  }
+
+  function flashLed(id){
+    const led = el('led-'+id);
+    if(!led) return;
+    led.classList.add('on');
+    setTimeout(()=> led.classList.remove('on'), 1500);
+  }
+
+  function showSlip(id){
+    const c = candidates[id];
+    slipSym.textContent = c.sym;
+    slipName.textContent = c.party + ' — ' + c.name;
+    slipSerial.textContent = 'SLIP NO. ' + String(state.slipCounter).padStart(6,'0');
+    slip.classList.remove('drop');
+    slip.classList.add('show');
+    setTimeout(()=>{
+      slip.classList.add('drop');
+      setTimeout(()=> slip.classList.remove('show','drop'), 700);
+    }, 4000);
+  }
+
+  btnPower.addEventListener('click', ()=>{
+    state.power = !state.power;
+    if(!state.power){
+      state.ballotOpen = false;
+    }
+    setStatus(state.power
+      ? 'Machine is ON. Press BALLOT to allow the next voter.'
+      : 'Machine is OFF. Press POWER to switch on.');
+    refreshDisplay();
+  });
+
+  btnBallot.addEventListener('click', ()=>{
+    if(!state.power || state.closed) return;
+    state.ballotOpen = true;
+    setStatus('Ready — voter may press one candidate button.');
+    refreshDisplay();
+  });
+
+  voteButtons.forEach(b=>{
+    b.addEventListener('click', ()=>{
+      if(!(state.power && state.ballotOpen && !state.closed)) return;
+      const id = b.getAttribute('data-vote');
+      state.votes[id] += 1;
+      state.slipCounter += 1;
+      state.ballotOpen = false;
+      beep(950, 180);
+      flashLed(id);
+      showSlip(id);
+      setStatus('Vote recorded. Press BALLOT for the next voter.');
+      refreshDisplay();
+    });
+  });
+
+  btnClose.addEventListener('click', ()=>{
+    if(!state.power || state.closed) return;
+    state.closed = true;
+    state.ballotOpen = false;
+    setStatus('Polling closed. No further votes will be accepted.');
+    refreshDisplay();
+  });
+
+  btnResult.addEventListener('click', ()=>{
+    if(!state.closed) return;
+    const total = totalVotes();
+    resultsBox.hidden = false;
+    resultsBox.innerHTML = '';
+    Object.keys(candidates).forEach(id=>{
+      const c = candidates[id];
+      const count = state.votes[id];
+      const pct = total ? Math.round((count/total)*100) : 0;
+      const row = document.createElement('div');
+      row.className = 'bar-row';
+      row.innerHTML =
+        '<span class="bar-label">'+c.sym+' '+c.name+'</span>'+
+        '<span class="bar-track"><span class="bar-fill" style="width:'+pct+'%"></span></span>'+
+        '<span class="bar-count">'+count+'</span>';
+      resultsBox.appendChild(row);
+    });
+    setStatus('Result declared — ' + total + ' total votes polled.');
+  });
+
+  const confirmOverlay = el('confirmOverlay');
+  btnClear.addEventListener('click', ()=>{
+    if(!state.power || !state.closed) return;
+    confirmOverlay.classList.add('show');
+  });
+  el('confirmNo').addEventListener('click', ()=> confirmOverlay.classList.remove('show'));
+  el('confirmYes').addEventListener('click', ()=>{
+    state.votes = { "1":0, "2":0, "3":0, "4":0, "nota":0 };
+    state.slipCounter = 0;
+    state.closed = false;
+    state.ballotOpen = false;
+    resultsBox.hidden = true;
+    resultsBox.innerHTML = '';
+    confirmOverlay.classList.remove('show');
+    setStatus('All votes cleared. Press BALLOT to begin polling again.');
+    refreshDisplay();
+  });
+
+  refreshDisplay();
+})();
+</script>
+</body>
+</html>
